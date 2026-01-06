@@ -1,5 +1,6 @@
 #include "clist_mt.h"
 #include <stdlib.h>
+#include <stdatomic.h>
 
 void clist_mt_init(CListMT *l)
 {
@@ -29,6 +30,7 @@ void clist_mt_destroy(CListMT *l)
 	pthread_mutex_destroy(&l->lock);
 }
 
+# if 0
 void clist_mt_insert_front(CListMT *l, long v)
 {
 	Node *n = (Node *)malloc(sizeof(Node));
@@ -44,6 +46,32 @@ void clist_mt_insert_front(CListMT *l, long v)
 	l->head.next = n;
 
 	pthread_mutex_unlock(&l->lock);
+}
+# endif
+
+void clist_mt_insert_front(CListMT *l, long v)
+{
+	Node *n = (Node *)malloc(sizeof(Node));
+	n->value = v;
+
+	for (;;) {
+		Node *first = atomic_load_explicit(
+				(_Atomic(Node **))&l->head.next,
+				memory_order_acquire
+				);
+		n->next = first;
+		n->prev = &l->head;
+
+		if (atomic_compare_exchange_weak_explicit(
+					(_Atomic(Node **))&l->head.next,
+					 &first,
+					 n,
+					 memory_order_release,
+					 memory_order_relaxed)){
+			first->prev = n;
+			return;
+		}
+	}
 }
 
 bool clist_mt_remove_back(CListMT *l, long *out)
